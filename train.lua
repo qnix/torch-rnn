@@ -167,6 +167,8 @@ end
 local optim_config = {learningRate = opt.learning_rate}
 local num_train = loader.split_sizes['train']
 local num_iterations = opt.max_epochs * num_train
+local iteration_timer = torch.Timer()
+local last_checkpoint_time = 100      -- Time spend on last evaluation
 model:training()
 for i = start_i + 1, num_iterations do
   local epoch = math.floor(i / num_train) + 1
@@ -188,14 +190,16 @@ for i = start_i + 1, num_iterations do
   table.insert(train_loss_history, loss[1])
   if opt.print_every > 0 and i % opt.print_every == 0 then
     local float_epoch = i / num_train + 1
-    local msg = 'Epoch %.2f / %d, i = %d / %d, loss = %f'
-    local args = {msg, float_epoch, opt.max_epochs, i, num_iterations, loss[1]}
+    local msg = 'Epoch %.2f / %d, i = %d / %d, loss = %f, time = %f'
+    local args = {msg, float_epoch, opt.max_epochs, i, num_iterations, loss[1], iteration_timer:time().real}
     print(string.format(unpack(args)))
   end
 
   -- Maybe save a checkpoint
   local check_every = opt.checkpoint_every
-  if (check_every > 0 and i % check_every == 0) or i == num_iterations then
+  if iteration_timer:time().real > (last_checkpoint_time * 10) or i == num_iterations then
+  -- if (check_every > 0 and i % check_every == 0) or i == num_iterations then
+    local chkpoint_timer = torch.Timer()
     -- Evaluate loss on the validation set. Note that we reset the state of
     -- the model; this might happen in the middle of an epoch, but that
     -- shouldn't cause too much trouble.
@@ -218,6 +222,7 @@ for i = start_i + 1, num_iterations do
     model:training()
 
     -- First save a JSON checkpoint, excluding the model
+    local save_checkpoint_timer = torch.Timer()
     local checkpoint = {
       opt = opt,
       train_loss_history = train_loss_history,
@@ -227,7 +232,7 @@ for i = start_i + 1, num_iterations do
       memory_usage = memory_usage,
       i = i
     }
-    local filename = string.format('%s_%d.json', opt.checkpoint_name, i)
+    local filename = string.format('%s_%d_%.6f.json', opt.checkpoint_name, i, val_loss)
     -- Make sure the output directory exists before we try to write it
     paths.mkdir(paths.dirname(filename))
     utils.write_json(filename, checkpoint)
@@ -237,11 +242,16 @@ for i = start_i + 1, num_iterations do
     model:clearState()
     model:float()
     checkpoint.model = model
-    local filename = string.format('%s_%d.t7', opt.checkpoint_name, i)
-    paths.mkdir(paths.dirname(filename))
+    local filename = string.format('%s_%d_%.6f.t7', opt.checkpoint_name, i, val_loss)
     torch.save(filename, checkpoint)
     model:type(dtype)
+    print(string.format('save checkpoint time: %f', save_checkpoint_timer:time().real))
+    last_checkpoint_time = chkpoint_timer:time().real
+    print(string.format('checkpoint time: %f', last_checkpoint_time))
     params, grad_params = model:getParameters()
     collectgarbage()
+
+    -- Reset the iteration timer
+    iteration_timer = torch.Timer()
   end
 end
