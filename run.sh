@@ -1,6 +1,11 @@
 #!/bin/bash -x
 
-train_gpu=0
+if [ -f train_gpu ]; then
+    train_gpu=$(head -1 train_gpu)
+else
+    train_gpu=$((RANDOM % 2))
+    echo $train_gpu > train_gpu
+fi
 
 PRINT_EVERY=100
 CHECKPOINT_EVERY=1000
