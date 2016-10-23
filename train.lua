@@ -168,7 +168,7 @@ local optim_config = {learningRate = opt.learning_rate}
 local num_train = loader.split_sizes['train']
 local num_iterations = opt.max_epochs * num_train
 local iteration_timer = torch.Timer()
-local last_checkpoint_time = 100      -- Time spend on last evaluation
+local last_checkpoint_time = 1000      -- Time spend on last evaluation
 model:training()
 for i = start_i + 1, num_iterations do
   local epoch = math.floor(i / num_train) + 1
@@ -197,7 +197,7 @@ for i = start_i + 1, num_iterations do
 
   -- Maybe save a checkpoint
   local check_every = opt.checkpoint_every
-  if iteration_timer:time().real > (last_checkpoint_time * 10) or i == num_iterations then
+  if iteration_timer:time().real > (last_checkpoint_time * 5) or i == num_iterations then
   -- if (check_every > 0 and i % check_every == 0) or i == num_iterations then
     local chkpoint_timer = torch.Timer()
     -- Evaluate loss on the validation set. Note that we reset the state of

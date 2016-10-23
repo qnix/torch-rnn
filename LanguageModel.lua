@@ -126,7 +126,7 @@ function LM:encode_string(s)
   for i = 1, #s do
     local token = s:sub(i, i)
     local idx = self.token_to_idx[token]
-    assert(idx ~= nil, 'Got invalid idx')
+    assert(idx ~= nil, string.format('Got invalid idx: [%s]', token))
     encoded[i] = idx
   end
   return encoded
