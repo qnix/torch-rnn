@@ -71,17 +71,16 @@ elif [ "$1" == "train800.cont" ]; then
     run_train 800 200 -init_from $init_from
 
 elif [ "$1" == "sample" ]; then
-    start_text="$2"
+    start_text="$(echo $2 | perl -p -e 's/([A-Z])/^\L\1\E/g; s/\s*$//')"
     if [ -z "$start_text" ]; then
-        start_text=$(tail -1 output | perl -p -e 's/([A-Z])/^\L\1\E/g; s/\s*$//')
+        start_text=$(grep -v '^==' output | tail -1 | perl -p -e 's/([A-Z])/^\L\1\E/g; s/\s*$//')
     fi
     checkpoint=$(ls -1rt cv.hat/checkpoint*.t7 | tail -1)
     echo "start_text: $start_text"
     echo "checkpoint: $checkpoint"
     th sample.lua -gpu $((1 - $train_gpu)) -sample 1 -checkpoint $checkpoint \
-       -start_text "$start_text" -length 20000 > output
-    perl -p -e 's/\^([a-z])/\U\1\E/g' output | awk 'length($0) > 99 && length($0) < 140'
-    head -2 output
+       -start_text "$start_text" -length 20000 | perl -p -e 's/\^([a-z])/\U\1\E/g' > output
+    awk 'length($0) >= 80 && length($0) < 140' output
 
 elif [ "$1" == "sample-cpu" ]; then
     shift

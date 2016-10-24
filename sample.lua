@@ -15,9 +15,10 @@ cmd:option('-gpu_backend', 'cuda')
 cmd:option('-verbose', 0)
 local opt = cmd:parse(arg)
 
-
+local timer = torch.Timer()
 local checkpoint = torch.load(opt.checkpoint)
 local model = checkpoint.model
+print(string.format('==> checkpoint: %f', timer:time().real))
 
 local msg
 if opt.gpu >= 0 and opt.gpu_backend == 'cuda' then
@@ -37,6 +38,8 @@ end
 if opt.verbose == 1 then print(msg) end
 
 model:evaluate()
+print(string.format('==> evaluate: %f', timer:time().real))
 
 local sample = model:sample(opt)
 print(sample)
+print(string.format('==> sample: %f', timer:time().real))
