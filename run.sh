@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export PATH=/home/qta/torch/install/bin:$PATH
+
 if [ -f train_gpu ]; then
     train_gpu=$(head -1 train_gpu)
 else
@@ -22,7 +24,7 @@ function run_train {
        -dropout 0.25 -gpu $train_gpu \
        -checkpoint_name cv.hat/checkpoint \
        -print_every $PRINT_EVERY -checkpoint_every $CHECKPOINT_EVERY -max_epochs 5 \
-       -learning_rate 1.25e-3 -lr_decay_every 2 -lr_decay_factor 0.8
+       -learning_rate 1.25e-3 -lr_decay_every 5 -lr_decay_factor 0.95
 }
 
 if [ "$1" == "prep" ]; then
@@ -79,7 +81,7 @@ elif [ "$1" == "sample" ]; then
     echo "start_text: $start_text"
     echo "checkpoint: $checkpoint"
     th sample.lua -gpu $((1 - $train_gpu)) -sample 1 -checkpoint $checkpoint \
-       -start_text "$start_text" -length 20000 | perl -p -e 's/\^([a-z])/\U\1\E/g' > output
+       -start_text "$start_text" -length 30000 | perl -p -e 's/\^([a-z])/\U\1\E/g' > output
     awk 'length($0) >= 80 && length($0) < 140' output
 
 elif [ "$1" == "sample-cpu" ]; then
