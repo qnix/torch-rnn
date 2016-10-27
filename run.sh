@@ -35,8 +35,8 @@ if [ "$1" == "prep" ]; then
         exit 0
     fi
     output=$(basename $input)
-    python scripts/preprocess.py --input_txt $input --input_json data/index.json \
-           --output_h5 $output.h5 --output_json data/index.json \
+    python scripts/preprocess.py --input_txt $input --input_json data/kaggle.hat/index.json \
+           --output_h5 $output.h5 --output_json data/kaggle.hat/index.json \
            --val_frac 0.10 --test_frac 0.10
 
 elif [ "$1" == "train" ]; then
@@ -75,7 +75,7 @@ elif [ "$1" == "train800.cont" ]; then
 elif [ "$1" == "sample" ]; then
     start_text="$(echo $2 | perl -p -e 's/([A-Z])/^\L\1\E/g; s/\s*$//')"
     if [ -z "$start_text" ]; then
-        start_text=$(grep -v '^==' output | tail -1 | perl -p -e 's/([A-Z])/^\L\1\E/g; s/\s*$//')
+        start_text=$(grep -v '^==' output | tail -n "+$((4 + RANDOM % 30))" | head -1 | perl -p -e 's/([A-Z])/^\L\1\E/g; s/\s*$//')
     fi
     checkpoint=$(ls -1rt cv.hat/checkpoint*.t7 | tail -1)
     echo "start_text: $start_text"
