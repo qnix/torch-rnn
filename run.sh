@@ -13,14 +13,15 @@ PRINT_EVERY=100
 CHECKPOINT_EVERY=1000
 
 function run_train {
-    if [ $# -lt 2 ]; then
-        echo "run_train <rnn-size> <batch-size>"
+    if [ $# -lt 3 ]; then
+        echo "run_train <num-layers> <rnn-size> <batch-size>"
         return 0
     fi
+    num_layers=$1; shift
     rnn_size=$1; shift
     batch_size=$1; shift
     th train.lua "$@" -input_h5 $input.h5 -input_json data/kaggle.hat/index.json \
-       -batch_size $batch_size -seq_length 180 -rnn_size $rnn_size -num_layers 3 \
+       -batch_size $batch_size -seq_length 180 -rnn_size $rnn_size -num_layers $num_layers \
        -dropout 0.25 -gpu $train_gpu \
        -checkpoint_name cv.hat/checkpoint \
        -print_every $PRINT_EVERY -checkpoint_every $CHECKPOINT_EVERY -max_epochs 5 \
@@ -45,7 +46,7 @@ elif [ "$1" == "train" ]; then
         echo "no input file provided"
         exit 0
     fi
-    run_train 960 200
+    run_train 3 960 200
 
 elif [ "$1" == "train.cont" ]; then
     input=$2
@@ -53,7 +54,7 @@ elif [ "$1" == "train.cont" ]; then
         echo "no input file provided"
         exit 0
     fi
-    run_train 960 200 -init_from init.960/checkpoint_40000.t7
+    run_train 3 960 200 -init_from init.960/checkpoint_40000.t7
 
 elif [ "$1" == "train800" ]; then
     input=$2
@@ -61,7 +62,7 @@ elif [ "$1" == "train800" ]; then
         echo "no input file provided"
         exit 0
     fi
-    run_train 800 200
+    run_train 3 800 200
 
 elif [ "$1" == "train800.cont" ]; then
     input=$2
@@ -70,7 +71,16 @@ elif [ "$1" == "train800.cont" ]; then
         exit 0
     fi
     init_from=init.800.hat/$(ls -1rt init.800.hat | tail -1)
-    run_train 800 200 -init_from $init_from
+    run_train 3 800 200 -init_from $init_from
+
+elif [ "$1" == "xtrain" ]; then
+    input=$2
+    train_gpu=$((1 - $train_gpu))
+    if [ -z "$input" ]; then
+        echo "no input file provided"
+        exit 0
+    fi
+    run_train 5 500 200
 
 elif [ "$1" == "sample" ]; then
     start_text="$(echo $2 | perl -p -e 's/([A-Z])/^\L\1\E/g; s/\s*$//')"
@@ -82,7 +92,7 @@ elif [ "$1" == "sample" ]; then
     echo "checkpoint: $checkpoint"
     th sample.lua -gpu $((1 - $train_gpu)) -sample 1 -checkpoint $checkpoint \
        -start_text "$start_text" -length 30000 | perl -p -e 's/\^([a-z])/\U\1\E/g' > output
-    awk 'length($0) >= 80 && length($0) < 140' output
+    awk 'length($0) >= 80 && length($0) < 140 && $0 !~ /\yI\y|\y[Mm]e\y|Obama/' output
 
 elif [ "$1" == "sample-cpu" ]; then
     shift
