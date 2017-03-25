@@ -28,13 +28,12 @@ cmd:option('-batchnorm', 0)
 
 -- Optimization options
 cmd:option('-max_epochs', 50)
-cmd:option('-learning_rate', 2e-3)
+cmd:option('-lr', 5e-3)
+cmd:option('-min_lr', 1e-4)
 cmd:option('-grad_clip', 5)
-cmd:option('-lr_decay_every', 5)
-cmd:option('-lr_decay_factor', 0.5)
 
 -- Output options
-cmd:option('-print_every', 1)
+cmd:option('-print_every', 10)
 cmd:option('-checkpoint_every', 1000)
 cmd:option('-checkpoint_name', 'cv/checkpoint')
 
@@ -180,7 +179,7 @@ function make_train_loss(period)
 end
 
 -- Train the model!
-local optim_config = {learningRate = opt.learning_rate}
+local optim_config = {learningRate = opt.lr}
 local num_train = loader.split_sizes['train']
 local num_iterations = opt.max_epochs * num_train
 local acc_loss, avg_loss = make_train_loss(10)
@@ -194,10 +193,8 @@ for i = start_i + 1, num_iterations do
     model:resetStates() -- Reset hidden states
 
     -- Maybe decay learning rate
-    if epoch % opt.lr_decay_every == 0 then
-      local old_lr = optim_config.learningRate
-      optim_config = {learningRate = old_lr * opt.lr_decay_factor}
-    end
+    local old_lr = optim_config.learningRate
+    optim_config = { learningRate = opt.min_lr + (opt.lr - opt.min_lr) * math.exp(-i/(num_iterations * 2)) }
   end
 
   -- Take a gradient step and maybe print
