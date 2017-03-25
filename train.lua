@@ -163,10 +163,28 @@ local function f(w)
   return loss, grad_params
 end
 
+function make_train_loss(period)
+   local train_loss = {}
+   function accumulate(iteration, loss)
+      local idx = (iteration % period) + 1
+      train_loss[idx] = loss
+   end
+   function average()
+      local sum = 0
+      for i = 1, #train_loss do
+         sum = sum + train_loss[i]
+      end
+      return (sum / #train_loss)
+   end
+   return accumulate, average
+end
+
 -- Train the model!
 local optim_config = {learningRate = opt.learning_rate}
 local num_train = loader.split_sizes['train']
 local num_iterations = opt.max_epochs * num_train
+local acc_loss, avg_loss = make_train_loss(10)
+
 model:training()
 for i = start_i + 1, num_iterations do
   local epoch = math.floor(i / num_train) + 1
@@ -188,8 +206,9 @@ for i = start_i + 1, num_iterations do
   table.insert(train_loss_history, loss[1])
   if opt.print_every > 0 and i % opt.print_every == 0 then
     local float_epoch = i / num_train + 1
-    local msg = 'Epoch %.2f / %d, i = %d / %d, loss = %f'
-    local args = {msg, float_epoch, opt.max_epochs, i, num_iterations, loss[1]}
+    acc_loss(i, loss[1])
+    local msg = 'Epoch %.2f / %d, i = %d / %d, loss = %f, lr: %f'
+    local args = {msg, float_epoch, opt.max_epochs, i, num_iterations, avg_loss(), optim_config.learningRate}
     print(string.format(unpack(args)))
   end
 
@@ -237,7 +256,7 @@ for i = start_i + 1, num_iterations do
     model:clearState()
     model:float()
     checkpoint.model = model
-    local filename = string.format('%s_%d.t7', opt.checkpoint_name, i)
+    local filename = string.format('%s_%d_%0.6f_%0.6f.t7', opt.checkpoint_name, i, avg_loss(), val_loss)
     paths.mkdir(paths.dirname(filename))
     torch.save(filename, checkpoint)
     model:type(dtype)
