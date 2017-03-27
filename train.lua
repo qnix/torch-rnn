@@ -27,14 +27,14 @@ cmd:option('-dropout', 0)
 cmd:option('-batchnorm', 0)
 
 -- Optimization options
-cmd:option('-max_epochs', 50)
-cmd:option('-lr', 5e-3)
-cmd:option('-min_lr', 1e-4)
+cmd:option('-max_epochs', 100)
+cmd:option('-lr', 1.25e-3)
+cmd:option('-min_lr', 2.5e-4)
 cmd:option('-grad_clip', 5)
 
 -- Output options
-cmd:option('-print_every', 10)
-cmd:option('-checkpoint_every', 1000)
+cmd:option('-print_every', 50)
+cmd:option('-checkpoint_every', 0)
 cmd:option('-checkpoint_name', 'cv/checkpoint')
 
 -- Benchmark options
@@ -162,6 +162,37 @@ local function f(w)
   return loss, grad_params
 end
 
+function make_avg_loss_check(period)
+   local env = {}
+   local idx = 1
+   env.last_period = {}
+   env.current_period = {}
+   function env.accumulate(loss)
+      if env.current_period[idx] ~= nil then
+         env.last_period[idx] = env.current_period[idx]
+      end
+      env.current_period[idx] = loss
+      idx = (idx + 1) % period + 1
+   end
+   function average(losses)
+      local sum = 0
+      for i = 1, #losses do
+         sum = sum + losses[i]
+      end
+      return (sum / #losses)
+   end
+   function env.current_average()
+      return average(env.current_period)
+   end
+   function env.last_average()
+      return average(env.last_period)
+   end
+   function env.is_smaller()
+      return env.current_average() < env.last_average()
+   end
+   return env
+end
+
 function make_train_loss(period)
    local train_loss = {}
    function accumulate(iteration, loss)
@@ -183,6 +214,7 @@ local optim_config = {learningRate = opt.lr}
 local num_train = loader.split_sizes['train']
 local num_iterations = opt.max_epochs * num_train
 local acc_loss, avg_loss = make_train_loss(10)
+local avg_loss_chk = make_avg_loss_check(50)
 
 model:training()
 for i = start_i + 1, num_iterations do
@@ -193,8 +225,12 @@ for i = start_i + 1, num_iterations do
     model:resetStates() -- Reset hidden states
 
     -- Maybe decay learning rate
-    local old_lr = optim_config.learningRate
-    optim_config = { learningRate = opt.min_lr + (opt.lr - opt.min_lr) * math.exp(-i/(num_iterations * 2)) }
+    optim_config = { learningRate = opt.min_lr + (opt.lr - opt.min_lr) * math.exp(-i/num_iterations) }
+  end
+
+  if (i % opt.print_every) == 0 and not avg_loss_chk.is_smaller() then
+     local old_lr = optim_config.learningRate
+     optim_config = { learningRate = opt.min_lr + (old_lr - opt.min_lr) * math.exp(-i/num_iterations) }
   end
 
   -- Take a gradient step and maybe print
@@ -211,7 +247,7 @@ for i = start_i + 1, num_iterations do
 
   -- Maybe save a checkpoint
   local check_every = opt.checkpoint_every
-  if (check_every > 0 and i % check_every == 0) or i == num_iterations then
+  if (check_every > 0 and i % check_every == 0) or i % num_train == 0 or i == num_iterations then
     -- Evaluate loss on the validation set. Note that we reset the state of
     -- the model; this might happen in the middle of an epoch, but that
     -- shouldn't cause too much trouble.
