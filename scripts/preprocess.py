@@ -27,6 +27,17 @@ def load_index(fname):
 
 
 def save_index(fname, token_to_idx):
+  # For 'bytes' encoding, replace non-ascii characters so the json dump
+  # doesn't crash
+  if args.encoding is None:
+    new_token_to_idx = {}
+    for token, idx in token_to_idx.items():
+      if ord(token) > 127:
+        new_token_to_idx['[%d]' % ord(token)] = idx
+      else:
+        new_token_to_idx[token] = idx
+    token_to_idx = new_token_to_idx
+
   # Dump a JSON file for the vocab
   json_data = {
     'token_to_idx': token_to_idx,
@@ -97,17 +108,6 @@ if __name__ == '__main__':
     f.create_dataset('train', data=train)
     f.create_dataset('val', data=val)
     f.create_dataset('test', data=test)
-
-  # For 'bytes' encoding, replace non-ascii characters so the json dump
-  # doesn't crash
-  if args.encoding is None:
-    new_token_to_idx = {}
-    for token, idx in token_to_idx.items():
-      if ord(token) > 127:
-        new_token_to_idx['[%d]' % ord(token)] = idx
-      else:
-        new_token_to_idx[token] = idx
-    token_to_idx = new_token_to_idx
 
   # Dump a JSON file for the vocab
   save_index(args.output_json, token_to_idx)
