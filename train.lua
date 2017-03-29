@@ -209,12 +209,27 @@ function make_train_loss(period)
    return accumulate, average
 end
 
+function make_time_tracker()
+   local timer = torch.Timer()
+   local start_time = timer:time().real
+   function elapse(with_reset)
+      local current_time = timer:time().real
+      local elapsed_time = current_time - start_time
+      if with_reset ~= nil then
+         start_time = timer:time().real
+      end
+      return elapsed_time
+   end
+   return elapse
+end
+
 -- Train the model!
 local optim_config = {learningRate = opt.lr}
 local num_train = loader.split_sizes['train']
 local num_iterations = opt.max_epochs * num_train
 local acc_loss, avg_loss = make_train_loss(10)
 local avg_loss_chk = make_avg_loss_check(50)
+local elapse_timer = make_time_tracker()
 
 model:training()
 for i = start_i + 1, num_iterations do
@@ -240,8 +255,8 @@ for i = start_i + 1, num_iterations do
   if opt.print_every > 0 and i % opt.print_every == 0 then
     local float_epoch = i / num_train + 1
     acc_loss(i, loss[1])
-    local msg = 'Epoch %.2f / %d, i = %d / %d, loss = %f, lr: %f'
-    local args = {msg, float_epoch, opt.max_epochs, i, num_iterations, avg_loss(), optim_config.learningRate}
+    local msg = 'Epoch %.2f / %d, i = %d / %d, loss = %f, lrate: %f, time: %f'
+    local args = {msg, float_epoch, opt.max_epochs, i, num_iterations, avg_loss(), optim_config.learningRate, elapse_timer(true) }
     print(string.format(unpack(args)))
   end
 
@@ -263,7 +278,7 @@ for i = start_i + 1, num_iterations do
       val_loss = val_loss + crit:forward(scores, yv)
     end
     val_loss = val_loss / num_val
-    print('val_loss = ', val_loss)
+    print('val_loss = ', val_loss, ', val_time = ', elapse_timer(true))
     table.insert(val_loss_history, val_loss)
     table.insert(val_loss_history_it, i)
     model:resetStates()
@@ -295,5 +310,8 @@ for i = start_i + 1, num_iterations do
     model:type(dtype)
     params, grad_params = model:getParameters()
     collectgarbage()
+
+    -- Reset the timer
+    elapse_timer(true)
   end
 end
