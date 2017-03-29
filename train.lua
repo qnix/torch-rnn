@@ -27,15 +27,14 @@ cmd:option('-dropout', 0)
 cmd:option('-batchnorm', 0)
 
 -- Optimization options
-cmd:option('-max_epochs', 50)
-cmd:option('-learning_rate', 2e-3)
+cmd:option('-max_epochs', 100)
+cmd:option('-lr', 1.25e-3)
+cmd:option('-min_lr', 2.5e-4)
 cmd:option('-grad_clip', 5)
-cmd:option('-lr_decay_every', 5)
-cmd:option('-lr_decay_factor', 0.5)
 
 -- Output options
-cmd:option('-print_every', 1)
-cmd:option('-checkpoint_every', 1000)
+cmd:option('-print_every', 50)
+cmd:option('-checkpoint_every', 0)
 cmd:option('-checkpoint_name', 'cv/checkpoint')
 
 -- Benchmark options
@@ -163,10 +162,75 @@ local function f(w)
   return loss, grad_params
 end
 
+function make_avg_loss_check(period)
+   local env = {}
+   local idx = 1
+   env.last_period = {}
+   env.current_period = {}
+   function env.accumulate(loss)
+      if env.current_period[idx] ~= nil then
+         env.last_period[idx] = env.current_period[idx]
+      end
+      env.current_period[idx] = loss
+      idx = (idx + 1) % period + 1
+   end
+   function average(losses)
+      local sum = 0
+      for i = 1, #losses do
+         sum = sum + losses[i]
+      end
+      return (sum / #losses)
+   end
+   function env.current_average()
+      return average(env.current_period)
+   end
+   function env.last_average()
+      return average(env.last_period)
+   end
+   function env.is_smaller()
+      return env.current_average() < env.last_average()
+   end
+   return env
+end
+
+function make_train_loss(period)
+   local train_loss = {}
+   function accumulate(iteration, loss)
+      local idx = (iteration % period) + 1
+      train_loss[idx] = loss
+   end
+   function average()
+      local sum = 0
+      for i = 1, #train_loss do
+         sum = sum + train_loss[i]
+      end
+      return (sum / #train_loss)
+   end
+   return accumulate, average
+end
+
+function make_time_tracker()
+   local timer = torch.Timer()
+   local start_time = timer:time().real
+   function elapse(with_reset)
+      local current_time = timer:time().real
+      local elapsed_time = current_time - start_time
+      if with_reset ~= nil then
+         start_time = timer:time().real
+      end
+      return elapsed_time
+   end
+   return elapse
+end
+
 -- Train the model!
-local optim_config = {learningRate = opt.learning_rate}
+local optim_config = {learningRate = opt.lr}
 local num_train = loader.split_sizes['train']
 local num_iterations = opt.max_epochs * num_train
+local acc_loss, avg_loss = make_train_loss(10)
+local avg_loss_chk = make_avg_loss_check(50)
+local elapse_timer = make_time_tracker()
+
 model:training()
 for i = start_i + 1, num_iterations do
   local epoch = math.floor(i / num_train) + 1
@@ -176,10 +240,12 @@ for i = start_i + 1, num_iterations do
     model:resetStates() -- Reset hidden states
 
     -- Maybe decay learning rate
-    if epoch % opt.lr_decay_every == 0 then
-      local old_lr = optim_config.learningRate
-      optim_config = {learningRate = old_lr * opt.lr_decay_factor}
-    end
+    optim_config = { learningRate = opt.min_lr + (opt.lr - opt.min_lr) * math.exp(-i/num_iterations) }
+  end
+
+  if (i % opt.print_every) == 0 and not avg_loss_chk.is_smaller() then
+     local old_lr = optim_config.learningRate
+     optim_config = { learningRate = opt.min_lr + (old_lr - opt.min_lr) * math.exp(-i/num_iterations) }
   end
 
   -- Take a gradient step and maybe print
@@ -188,14 +254,15 @@ for i = start_i + 1, num_iterations do
   table.insert(train_loss_history, loss[1])
   if opt.print_every > 0 and i % opt.print_every == 0 then
     local float_epoch = i / num_train + 1
-    local msg = 'Epoch %.2f / %d, i = %d / %d, loss = %f'
-    local args = {msg, float_epoch, opt.max_epochs, i, num_iterations, loss[1]}
+    acc_loss(i, loss[1])
+    local msg = 'Epoch %.2f / %d, i = %d / %d, loss = %f, lrate: %f, time: %f'
+    local args = {msg, float_epoch, opt.max_epochs, i, num_iterations, avg_loss(), optim_config.learningRate, elapse_timer(true) }
     print(string.format(unpack(args)))
   end
 
   -- Maybe save a checkpoint
   local check_every = opt.checkpoint_every
-  if (check_every > 0 and i % check_every == 0) or i == num_iterations then
+  if (check_every > 0 and i % check_every == 0) or i % num_train == 0 or i == num_iterations then
     -- Evaluate loss on the validation set. Note that we reset the state of
     -- the model; this might happen in the middle of an epoch, but that
     -- shouldn't cause too much trouble.
@@ -211,7 +278,7 @@ for i = start_i + 1, num_iterations do
       val_loss = val_loss + crit:forward(scores, yv)
     end
     val_loss = val_loss / num_val
-    print('val_loss = ', val_loss)
+    print('val_loss = ', val_loss, ', val_time = ', elapse_timer(true))
     table.insert(val_loss_history, val_loss)
     table.insert(val_loss_history_it, i)
     model:resetStates()
@@ -237,11 +304,14 @@ for i = start_i + 1, num_iterations do
     model:clearState()
     model:float()
     checkpoint.model = model
-    local filename = string.format('%s_%d.t7', opt.checkpoint_name, i)
+    local filename = string.format('%s_%d_%0.6f_%0.6f.t7', opt.checkpoint_name, i, avg_loss(), val_loss)
     paths.mkdir(paths.dirname(filename))
     torch.save(filename, checkpoint)
     model:type(dtype)
     params, grad_params = model:getParameters()
     collectgarbage()
+
+    -- Reset the timer
+    elapse_timer(true)
   end
 end
